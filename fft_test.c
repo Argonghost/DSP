@@ -49,8 +49,3 @@ int main(int argc, char* argv[]){
 	fftw_free(back_out);
 	return 0;
 }
-
-
-// We started with including the fftw3 header then followed by main.  The N is the dimension of the input and output data of the FFT.
-// We declare in and out points with fft_complex then we declare a variable of type fftw_plan called my_plan.
-// Then we declare the type of plan which we want to perform via the function fftw_plan_dft_1d
