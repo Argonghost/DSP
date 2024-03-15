@@ -39,7 +39,7 @@ int main(int argc, char* argv[]){
 	fftw_execute(back_plan);
 
 	for(int i = 0; i < N; i ++){
-		printf("%3d %12f %12f\n", i, back_out[i][0], back_out[i][1]);
+		printf("%3d %12f %12f\n", i, back_out[i][0]/100, back_out[i][1]/100);
 	}
 
 	fftw_destroy_plan(my_plan);
