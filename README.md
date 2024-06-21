@@ -11,6 +11,6 @@ For properly compiling ``gps.c``, simply invoke
 To install ``liquiddsp``, check out the main repository of the author: https://github.com/jgaeddert/liquid-dsp.
 
 Below is the power spectrum of the GPS L1 C/A we get.
-![Alt text](https://github.com/user-attachments/files/15921784/PSD.pdf)
+![Alt text](PSD.pdf)
 
 
