@@ -79,36 +79,4 @@ int PRN(int sv, int *ca) {
     return 0;
 }
 
-// The below function, get_code, takes in a given prn code, chipping rate, and a given ADC sampling rate n, 
-// in order to have the prn repeat itself in accordance with an ADC.
 
-int* get_code(int* code, int n, int code_len) {
-    int* gc = malloc(n * code_len * sizeof(int));
-
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < code_len; j++) {
-            gc[i*code_len + j] = code[j];
-        }
-    }
-    return gc;
-}
-
-int main() {
-    int sat_24[1023];
-    PRN(1, sat_24);
-    printf("PRN code for satellite :\n");
-    printf("------------------------------\n");
-    printf("{");
-    for (int i = 0; i < 1023; i++) {
-        printf("%d,", sat_24[i]);
-    }
-
-    printf("}");
-
-    int *new = get_code(sat_24, 4, 1023);
-    for(int i = 0; i < 1023*4; i++){
-        printf("%d", new[i]);
-    }
-    free(new);
-    return 0;
-}
