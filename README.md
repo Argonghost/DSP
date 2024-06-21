@@ -8,9 +8,9 @@ $f_o = f_i - n(f_s / 2) ~= f_s / 4$
 For properly compiling ``gps.c``, simply invoke
 ```gcc gpc.c -o main -lm -lliquid```
 
-To install ``liquiddsp``, check out the main repository of the author: [GitHub Pages]https://github.com/jgaeddert/liquid-dsp.
+To install ``liquiddsp``, check out the main repository of the author: https://github.com/jgaeddert/liquid-dsp.
 
 Below is the power spectrum of the GPS L1 C/A we get.
-[PSD.pdf](https://github.com/user-attachments/files/15921784/PSD.pdf)
+![screenshot][PSD.pdf](https://github.com/user-attachments/files/15921784/PSD.pdf)
 
 
