@@ -3,7 +3,7 @@ This is a micro repository that will contain common digital signal processing te
 
 The ``gps.c`` example, is a complete example that simulates a transmitted GPS signal, that is received by an ADC that samples at 8.184e3 MSps, with attention paid to the Coarse Acquisition code (C/A) code only, Therefore, the digital input data (C/A code) has a frequency of 1.023 MHz, for simplicity, the IF frequency is assumed to be 2.046 MHz and the sampling rate is assumed to be 8.184 MHz.  These parameters are obtained theoretically from the relation:
 
-$\f_o = f_i - n(f_s / 2) ~= f_s / 4$
+$f_o = f_i - n(f_s / 2) ~= f_s / 4$
 
 For properly compiling ``gps.c``, simply invoke
 ```gcc gpc.c -o main -lm -lliquid```
