@@ -113,7 +113,7 @@ int main() {
     for (int i = 0; i < num_samples; i++) {
         int chip_index = i / (num_samples / 1023);
         int nav_index = i / (num_samples / 50);
-        bpsk_signal[i] = (2 * code[chip_index] - 1) *carrier_signal[i];
+        bpsk_signal[i] = (2 * code[chip_index] - 1) *carrier_signal[i] * (2 * nav_data[nav_index] - 1);
     }
     double* PSD = compute_power_spectrum(bpsk_signal, num_samples);
 
