@@ -5,7 +5,7 @@ The ``gps.c`` example, is a complete example that simulates a transmitted GPS si
 
 $f_o = f_i - n(f_s / 2) ~= f_s / 4$
 
-The output is the plot PSD.pdf which is the power spectrum of a carrier wave of an GPS L1 signal BPSK modulated with the PRN code for a given a satellite.  Nav data bit stream has been omitted to keep it simple.
+The output is the plot PSD.pdf which is the power spectrum of a carrier wave of an GPS L1 signal BPSK modulated with the PRN code along with the 50 Hz nav data for a given a satellite.
 
 For properly compiling ``gps.c``, simply invoke
 ```gcc gpc.c -o main -lm -lliquid```
