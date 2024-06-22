@@ -15,7 +15,7 @@ To install ``liquiddsp``, check out the main repository of the author: https://g
 ### To do list:
 - [x] Simulate power spectrum of GPS L1 signal
 - [x] Add nav data to GPS Signal
-- [ ] Add complex Additive White Gaussian Noise
+- [x] Add complex Additive White Gaussian Noise
 - [ ] Model BPSK constellation
 - [ ] Carry out despreading, correlation, and tracking
 
