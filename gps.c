@@ -6,6 +6,7 @@
 #include <liquid/liquid.h>
 #include <complex.h>
 #include "GoldCodelib.h"
+#include <time.h>
 #define PI 3.141592654
 #define Fs 250000.00
 
@@ -40,9 +41,10 @@ void repeat_1d(int *src, int src_len, int repeats, int **dst, int *dst_len) {
 double complex* generate_carrier(double carrier_freq, double code_duration, int num_samples) {
     double complex* carrier_signal = malloc(num_samples * sizeof(double complex));
     double time_step = code_duration / num_samples;
+    double amplitude = sqrt(2 * pow(10, -6));
     for (int i = 0; i < num_samples; i++) {
         double t = i * time_step;
-        carrier_signal[i] = cexp(I * 2 * PI * carrier_freq * t);
+        carrier_signal[i] = amplitude * cexp(I * 2 * PI * carrier_freq * t);
     }
     return carrier_signal;
 }
@@ -71,7 +73,7 @@ double* compute_power_spectrum(double complex* signal, int num_samples) {
     fft_shift(fft_signal, num_samples);
     double* PSD = malloc(num_samples * sizeof(double));
     for (int i = 0; i < num_samples; i++) {
-        PSD[i] = cabsf(fft_signal[i]) / num_samples;
+        PSD[i] = cabsf(fft_signal[i] / num_samples) / num_samples;
     }
 
     fft_destroy_plan(p);
@@ -79,7 +81,39 @@ double* compute_power_spectrum(double complex* signal, int num_samples) {
     return PSD;
 }
 
+double randn() {
+    static double U, V;
+    static int phase = 0;
+    double Z;
 
+    if (phase == 0) {
+        U = (double)rand() / RAND_MAX;
+        V = (double)rand() / RAND_MAX;
+        Z = sqrt(-2.0 * log(U)) * sin(2.0 * PI * V);
+    } else {
+        Z = sqrt(-2.0 * log(U)) * cos(2.0 * PI * V);
+    }
+
+    phase = 1 - phase;
+    return Z;
+}
+
+float complex* generate_noise_matrix(int N, float SNR, float code_duration) {
+
+    time_t t;
+    // Seed the random number generator
+    srand((unsigned) time(&t));
+
+    float noise_scale = powf(10.0, SNR / 20.0) / sqrt(2.0);
+    float complex* W = malloc(sizeof(float complex) * N);
+
+    for (int i = 0; i < N; i++) {
+        float real_part = randn();
+        float imag_part = randn();
+        W[i] = (real_part + I * imag_part) * noise_scale;   
+    }
+    return W;
+}
 
 int main() {
     int sat_24[1023];
@@ -101,6 +135,9 @@ int main() {
     double carrier_freq = 1575.42e6; // GPS L1 carrier frequency (Hz)
     double code_duration = 1e-3; // 1 ms
     int num_samples = 8.184e3;
+    float SNRdB = 40.0f; // signal-to-noise ratio [dB]
+    float noise_floor = -40.0f; // Noise floor 
+    float complex* W = generate_noise_matrix(num_samples, SNRdB, code_duration); // Generate noise matrix 
 
     // Generate the carrier signal
     double complex* carrier_signal = generate_carrier(carrier_freq, code_duration, num_samples);
@@ -113,7 +150,7 @@ int main() {
     for (int i = 0; i < num_samples; i++) {
         int chip_index = i / (num_samples / 1023);
         int nav_index = i / (num_samples / 50);
-        bpsk_signal[i] = (2 * code[chip_index] - 1) *carrier_signal[i] * (2 * nav_data[nav_index] - 1);
+        bpsk_signal[i] = (2 * code[chip_index] - 1) *carrier_signal[i] * (2 * nav_data[nav_index] - 1) + W[i];
     }
     double* PSD = compute_power_spectrum(bpsk_signal, num_samples);
 
@@ -125,6 +162,7 @@ int main() {
         double freq = (i < num_samples/2) ? i * Fs / num_samples : (i - num_samples) * Fs / num_samples;
         fprintf(output, "%lf %lf\n", freq, PSD[i]);
     }
+
     fclose(output);
 
     // Set up gnuplot commands
@@ -147,6 +185,7 @@ int main() {
     free(bpsk_signal);
     free(PSD);
     free(nav_data);
+    free(W);
 
     return 0;
 }
