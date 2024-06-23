@@ -8,7 +8,6 @@
 #include "GoldCodelib.h"
 #include <time.h>
 #define PI 3.141592654
-#define Fs 250000.00
 
 // The below function, get_code, takes in a given prn code, code length, and repeats the PRN code n times
 
@@ -44,7 +43,7 @@ double complex* generate_carrier(double carrier_freq, double code_duration, int 
     double amplitude = sqrt(2 * pow(10, -6));
     for (int i = 0; i < num_samples; i++) {
         double t = i * time_step;
-        carrier_signal[i] = amplitude * cexp(I * 2 * PI * carrier_freq * t);
+        carrier_signal[i] =cexp(I * 2 * PI * carrier_freq * t);
     }
     return carrier_signal;
 }
@@ -134,7 +133,8 @@ int main() {
 
     double carrier_freq = 1575.42e6; // GPS L1 carrier frequency (Hz)
     double code_duration = 1e-3; // 1 ms
-    int num_samples = 8.184e3;
+    double fs = 8.184e6;
+    int num_samples = fs * code_duration;
     float SNRdB = 40.0f; // signal-to-noise ratio [dB]
     float noise_floor = -40.0f; // Noise floor 
     float complex* W = generate_noise_matrix(num_samples, SNRdB, code_duration); // Generate noise matrix 
@@ -150,7 +150,7 @@ int main() {
     for (int i = 0; i < num_samples; i++) {
         int chip_index = i / (num_samples / 1023);
         int nav_index = i / (num_samples / 50);
-        bpsk_signal[i] = (2 * code[chip_index] - 1) *carrier_signal[i] * (2 * nav_data[nav_index] - 1) + W[i];
+        bpsk_signal[i] = (2 * code[chip_index] - 1) *carrier_signal[i] * (2 * nav_data[nav_index] - 1);
     }
     double* PSD = compute_power_spectrum(bpsk_signal, num_samples);
 
@@ -159,14 +159,16 @@ int main() {
 
     // Write data to output file
     for (int i = 0; i < num_samples; i++) {
-        double freq = (i < num_samples/2) ? i * Fs / num_samples : (i - num_samples) * Fs / num_samples;
+        double freq = (i < num_samples/2) ? i * fs / num_samples : (i - num_samples) * fs / num_samples;
+        freq /= 1000;
         fprintf(output, "%lf %lf\n", freq, PSD[i]);
     }
 
     fclose(output);
+    
 
     // Set up gnuplot commands
-    fprintf(pipe_gp,"set xlabel 'Frequency [KHz]'\n");
+    fprintf(pipe_gp,"set xlabel 'Frequency [MHz]'\n");
     fprintf(pipe_gp,"set ylabel 'Power Spectrum [dB]'\n");
     fprintf(pipe_gp, "set grid linewidth 1\n");
     fprintf(pipe_gp, "set border linewidth 2\n");
