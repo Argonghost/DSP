@@ -6,6 +6,7 @@
 #include <liquid/liquid.h>
 #include <complex.h>
 #include "GoldCodelib.h"
+#include "SVD.h"
 #include <time.h>
 #define PI 3.141592654
 
@@ -40,7 +41,6 @@ void repeat_1d(int *src, int src_len, int repeats, int **dst, int *dst_len) {
 double complex* generate_carrier(double carrier_freq, double code_duration, int num_samples) {
     double complex* carrier_signal = malloc(num_samples * sizeof(double complex));
     double time_step = code_duration / num_samples;
-    double amplitude = sqrt(2 * pow(10, -6));
     for (int i = 0; i < num_samples; i++) {
         double t = i * time_step;
         carrier_signal[i] =cexp(I * 2 * PI * carrier_freq * t);
@@ -50,12 +50,10 @@ double complex* generate_carrier(double carrier_freq, double code_duration, int 
 
 int* generate_nav_data(int num_bits) {
     int* nav_data = (int*)malloc(num_bits * sizeof(int));
-    
-    // Generate random navigation data (0 or 1)
+    srand(time(NULL));
     for (int i = 0; i < num_bits; i++) {
         nav_data[i] = rand() % 2;
     }
-    
     return nav_data;
 }
 
@@ -80,43 +78,9 @@ double* compute_power_spectrum(double complex* signal, int num_samples) {
     return PSD;
 }
 
-double randn() {
-    static double U, V;
-    static int phase = 0;
-    double Z;
-
-    if (phase == 0) {
-        U = (double)rand() / RAND_MAX;
-        V = (double)rand() / RAND_MAX;
-        Z = sqrt(-2.0 * log(U)) * sin(2.0 * PI * V);
-    } else {
-        Z = sqrt(-2.0 * log(U)) * cos(2.0 * PI * V);
-    }
-
-    phase = 1 - phase;
-    return Z;
-}
-
-float complex* generate_noise_matrix(int N, float SNR, float code_duration) {
-
-    time_t t;
-    // Seed the random number generator
-    srand((unsigned) time(&t));
-
-    float noise_scale = powf(10.0, SNR / 20.0) / sqrt(2.0);
-    float complex* W = malloc(sizeof(float complex) * N);
-
-    for (int i = 0; i < N; i++) {
-        float real_part = randn();
-        float imag_part = randn();
-        W[i] = (real_part + I * imag_part) * noise_scale;   
-    }
-    return W;
-}
-
 int main() {
     int sat_24[1023];
-    PRN(12, sat_24);
+    PRN(1, sat_24);
     printf("PRN code for satellite :\n");
     printf("------------------------------\n");
     printf("{");
@@ -126,7 +90,15 @@ int main() {
 
     printf("}\n");
 
-    int *new = get_code(sat_24, 1023, 1023);
+    printf("Testing repeat ....\n");
+    int *new = get_code(sat_24, 2, 1023);
+    for (int i = 0; i < 1023 * 2; i++) {
+        printf("%d", new[i]);
+        if(i == 1023 - 1){
+            printf("\n");
+            printf("\n");
+        };
+    }
     int *code;
     int code_len;
     repeat_1d(new, 1023, 8, &code, &code_len);
@@ -136,45 +108,46 @@ int main() {
     double fs = 8.184e6;
     int num_samples = fs * code_duration;
     float SNRdB = 40.0f; // signal-to-noise ratio [dB]
-    float noise_floor = -40.0f; // Noise floor 
-    float complex* W = generate_noise_matrix(num_samples, SNRdB, code_duration); // Generate noise matrix 
-
+    float noise_floor = 40.0f; // Noise floor 
+    float nstd = powf(10.0f, noise_floor/20.0f); 
     // Generate the carrier signal
     double complex* carrier_signal = generate_carrier(carrier_freq, code_duration, num_samples);
 
-    // Generate arbitrary 50 BPs nava data
+    // Generate fake nav data
     int* nav_data = generate_nav_data(50);
-
     // BPSK modulation
     double complex* bpsk_signal = malloc(num_samples * sizeof(double complex));
     for (int i = 0; i < num_samples; i++) {
         int chip_index = i / (num_samples / 1023);
         int nav_index = i / (num_samples / 50);
-        bpsk_signal[i] = (2 * code[chip_index] - 1) *carrier_signal[i] * (2 * nav_data[nav_index] - 1);
+        int data_bit = code[chip_index]; // Modulo-2 addition (XOR)
+
+        bpsk_signal[i] = (2 * data_bit - 1)*carrier_signal[i] + (randnf() + _Complex_I*randnf())*sqrtf(2);
     }
+
     double* PSD = compute_power_spectrum(bpsk_signal, num_samples);
 
     FILE *pipe_gp = popen("gnuplot -p", "w");
     FILE *output = fopen("output.txt", "w");
 
-    // Write data to output file
     for (int i = 0; i < num_samples; i++) {
         double freq = (i < num_samples/2) ? i * fs / num_samples : (i - num_samples) * fs / num_samples;
-        freq /= 1000;
-        fprintf(output, "%lf %lf\n", freq, PSD[i]);
+        freq /= 1000000;
+        fprintf(output, "%d %lf\n",i, crealf(bpsk_signal[i]));
     }
-
+ 
     fclose(output);
     
 
     // Set up gnuplot commands
-    fprintf(pipe_gp,"set xlabel 'Frequency [MHz]'\n");
-    fprintf(pipe_gp,"set ylabel 'Power Spectrum [dB]'\n");
+    fprintf(pipe_gp,"set xlabel 'time'\n");
+    fprintf(pipe_gp,"set ylabel 'Raw signal'\n");
+    // fprintf(pipe_gp, "set yrange [-3:3]\n"); 
     fprintf(pipe_gp, "set grid linewidth 1\n");
     fprintf(pipe_gp, "set border linewidth 2\n");
     fprintf(pipe_gp, "set tics font 'Arial,10'\n");
     fprintf(pipe_gp, "set key font 'Arial,10'\n");
-    fprintf(pipe_gp,"plot 'output.txt' using 1:2 with lines lc rgb 'blue' title 'Power Spectrum'\n");
+    fprintf(pipe_gp,"plot 'output.txt' using 1:2 with lines lc rgb 'blue' title 'Raw Signal'\n");
 
     // Close the gnuplot pipe
     fflush(pipe_gp);
@@ -187,7 +160,5 @@ int main() {
     free(bpsk_signal);
     free(PSD);
     free(nav_data);
-    free(W);
-
     return 0;
 }
