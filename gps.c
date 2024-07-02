@@ -66,7 +66,7 @@ double* compute_power_spectrum(double complex* signal, int num_samples) {
     
     fftplan p = fft_create_plan(num_samples, fft_signal, fft_signal, LIQUID_FFT_FORWARD, 0);
     fft_execute(p);
-    fft_shift(fft_signal, num_samples);
+    // fft_shift(fft_signal, num_samples);
     double* PSD = malloc(num_samples * sizeof(double));
     for (int i = 0; i < num_samples; i++) {
         PSD[i] = cabsf(fft_signal[i] / num_samples) / num_samples;
@@ -100,15 +100,15 @@ int main() {
     }
     int *code;
     int code_len;
-    repeat_1d(new, 1023, 8, &code, &code_len);
+    repeat_1d(new, 1023, 20, &code, &code_len);
 
-    double carrier_freq = 1575.42e6; // GPS L1 carrier frequency (Hz)
+    double carrier_freq = 0; // GPS L1 carrier frequency (Hz)
     double code_duration = 1e-3; // 1 ms
-    double fs = 8.184e6;
+    double fs = 20.46e6;
     int num_samples = fs * code_duration;
-    float SNRdB = 40.0f; // signal-to-noise ratio [dB]
-    float noise_floor = 40.0f; // Noise floor 
-    float nstd = powf(10.0f, noise_floor/20.0f); 
+    float SNRdB = -158.5f; // signal-to-noise ratio [dB]
+    float noise_floor = -130.0f; // Noise floor 
+    float nstd = powf(10.0f, (SNRdB - noise_floor )/20.0f); 
     // Generate the carrier signal
     double complex* carrier_signal = generate_carrier(carrier_freq, code_duration, num_samples);
 
@@ -119,7 +119,7 @@ int main() {
     for (int i = 0; i < num_samples; i++) {
         int chip_index = i / (num_samples / 1023);
         int nav_index = i / (num_samples / 50);
-        int data_bit = code[chip_index]; // Modulo-2 addition (XOR)
+        int data_bit = code[chip_index]^nav_data[nav_index]; // Modulo-2 addition (XOR)
 
         bpsk_signal[i] = (2 * data_bit - 1)*carrier_signal[i] + (randnf() + _Complex_I*randnf())*sqrtf(2);
     }
@@ -132,7 +132,8 @@ int main() {
     for (int i = 0; i < num_samples; i++) {
         double freq = (i < num_samples/2) ? i * fs / num_samples : (i - num_samples) * fs / num_samples;
         freq /= 1000000;
-        fprintf(output, "%d %lf\n",i, crealf(bpsk_signal[i]));
+        // fprintf(output, "%d %lf\n",i, crealf(bpsk_signal[i]));
+        fprintf(output, "%lf %lf\n",freq, PSD[i]);
     }
  
     fclose(output);
