@@ -51,7 +51,7 @@ int* generate_nav_data(int num_bits) {
     int* nav_data = (int*)malloc(num_bits * sizeof(int));
     srand(time(NULL));
     for (int i = 0; i < num_bits; i++) {
-        nav_data[i] = rand() % 2;
+        nav_data[i] = rand() % 2 ;
     }
     return nav_data;
 }
@@ -114,14 +114,17 @@ int main() {
             upsampled_code[i] = upsampled_code[i % upsampled_code_len];
         }
     }
+
+    // Generate fake nav data
+    int* nav_data = generate_nav_data(50);
+
     // BPSK modulation
     double complex* bpsk_signal = malloc(num_samples * sizeof(double complex));
     for (int i = 0; i < num_samples; i++) {
-        int chip_index = i / (num_samples / 1023);
-        int nav_index = i / (num_samples / 50);
-        int data_bit = upsampled_code[i]; // Modulo-2 addition (XOR)
+        int nav_index = (i * 50 / num_samples);
+        int data_bit = upsampled_code[i]^nav_data[nav_index]; // Modulo-2 addition (XOR)
 
-        bpsk_signal[i] = (2 * data_bit - 1)*carrier_signal[i];// + (randnf() + _Complex_I*randnf())*sqrtf(2);
+        bpsk_signal[i] = (2 * data_bit - 1)*carrier_signal[i] + (randnf() + _Complex_I*randnf())*sqrtf(2);
     }
 
     double* PSD = compute_power_spectrum(bpsk_signal, num_samples);
@@ -132,7 +135,7 @@ int main() {
     for (int i = 0; i < num_samples; i++) {
         double freq = (i < num_samples/2) ? i * fs / num_samples : (i - num_samples) * fs / num_samples;
         freq /= 1000000;
-        // fprintf(output, "%d %lf\n",i, crealf(bpsk_signal[i]));
+        int nav_index = (i * 50 / num_samples);
         fprintf(output, "%lf %lf\n",freq, PSD[i]);
     }
  
@@ -140,14 +143,14 @@ int main() {
     
 
     // Set up gnuplot commands
-    fprintf(pipe_gp,"set xlabel 'MHz'\n");
+    fprintf(pipe_gp,"set xlabel 'Frequency [MHz]'\n");
     fprintf(pipe_gp,"set ylabel 'C/A Power Spectrum [dB]'\n");
     fprintf(pipe_gp, "set ylabel 'Power Spectral Density'\n");
     fprintf(pipe_gp, "set grid linewidth 1\n");
     fprintf(pipe_gp, "set border linewidth 2\n");
     fprintf(pipe_gp, "set tics font 'Arial,10'\n");
     fprintf(pipe_gp, "set key font 'Arial,10'\n");
-    fprintf(pipe_gp,"plot 'output.txt' using 1:2 with lines lc rgb 'blue' title 'Raw Signal'\n");
+    fprintf(pipe_gp,"plot 'output.txt' using 1:2 with lines lc rgb 'blue' title 'Baseband Signal'\n");
 
     // Close the gnuplot pipe
     fflush(pipe_gp);
@@ -156,5 +159,7 @@ int main() {
     free(carrier_signal);
     free(bpsk_signal);
     free(PSD);
+    free(nav_data);
+    free(upsampled_code);
     return 0;
 }
