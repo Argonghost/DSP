@@ -69,7 +69,7 @@ double* compute_power_spectrum(double complex* signal, int num_samples) {
     // fft_shift(fft_signal, num_samples);
     double* PSD = malloc(num_samples * sizeof(double));
     for (int i = 0; i < num_samples; i++) {
-        PSD[i] = cabsf(fft_signal[i] / num_samples) / num_samples;
+        PSD[i] = 20*log10f(cabsf(fft_signal[i] / num_samples)) / num_samples;
     }
 
     fft_destroy_plan(p);
@@ -86,42 +86,42 @@ int main() {
     for (int i = 0; i < 1023; i++) {
         printf("%d", sat_24[i]);
     }
+    
 
     printf("}\n");
-
-    printf("Testing repeat ....\n");
-    int *new = get_code(sat_24, 2, 1023);
-    for (int i = 0; i < 1023 * 2; i++) {
-        printf("%d", new[i]);
-        if(i == 1023 - 1){
-            printf("\n");
-            printf("\n");
-        };
-    }
-    int *code;
-    int code_len;
-    repeat_1d(new, 1023, 20, &code, &code_len);
-
-    double carrier_freq = 0; // GPS L1 carrier frequency (Hz)
+    double carrier_freq = 0.0; // GPS L1 carrier frequency (Hz)
     double code_duration = 1e-3; // 1 ms
-    double fs = 20.46e6;
+    double fs = 8*1.023e6;
     int num_samples = fs * code_duration;
+    int chip_rate = 1.023e6;
+    int samples_per_chip = fs / chip_rate;
+
+
     float SNRdB = -158.5f; // signal-to-noise ratio [dB]
     float noise_floor = -130.0f; // Noise floor 
     float nstd = powf(10.0f, (SNRdB - noise_floor )/20.0f); 
     // Generate the carrier signal
     double complex* carrier_signal = generate_carrier(carrier_freq, code_duration, num_samples);
 
-    // Generate fake nav data
-    int* nav_data = generate_nav_data(50);
+    int *upsampled_code;
+    int upsampled_code_len;
+    repeat_1d(sat_24, 1023, samples_per_chip, &upsampled_code, &upsampled_code_len);
+
+    // Ensure the upsampled code length matches num_samples
+    if (upsampled_code_len < num_samples) {
+        upsampled_code = realloc(upsampled_code, num_samples * sizeof(int));
+        for (int i = upsampled_code_len; i < num_samples; i++) {
+            upsampled_code[i] = upsampled_code[i % upsampled_code_len];
+        }
+    }
     // BPSK modulation
     double complex* bpsk_signal = malloc(num_samples * sizeof(double complex));
     for (int i = 0; i < num_samples; i++) {
         int chip_index = i / (num_samples / 1023);
         int nav_index = i / (num_samples / 50);
-        int data_bit = code[chip_index]^nav_data[nav_index]; // Modulo-2 addition (XOR)
+        int data_bit = upsampled_code[i]; // Modulo-2 addition (XOR)
 
-        bpsk_signal[i] = (2 * data_bit - 1)*carrier_signal[i] + (randnf() + _Complex_I*randnf())*sqrtf(2);
+        bpsk_signal[i] = (2 * data_bit - 1)*carrier_signal[i];// + (randnf() + _Complex_I*randnf())*sqrtf(2);
     }
 
     double* PSD = compute_power_spectrum(bpsk_signal, num_samples);
@@ -140,9 +140,9 @@ int main() {
     
 
     // Set up gnuplot commands
-    fprintf(pipe_gp,"set xlabel 'time'\n");
-    fprintf(pipe_gp,"set ylabel 'Raw signal'\n");
-    // fprintf(pipe_gp, "set yrange [-3:3]\n"); 
+    fprintf(pipe_gp,"set xlabel 'MHz'\n");
+    fprintf(pipe_gp,"set ylabel 'C/A Power Spectrum [dB]'\n");
+    fprintf(pipe_gp, "set ylabel 'Power Spectral Density'\n");
     fprintf(pipe_gp, "set grid linewidth 1\n");
     fprintf(pipe_gp, "set border linewidth 2\n");
     fprintf(pipe_gp, "set tics font 'Arial,10'\n");
@@ -153,12 +153,8 @@ int main() {
     fflush(pipe_gp);
     pclose(pipe_gp);
 
-    // Free memory
-    free(new);
-    free(code);
     free(carrier_signal);
     free(bpsk_signal);
     free(PSD);
-    free(nav_data);
     return 0;
 }
