@@ -39,10 +39,8 @@ void repeat_1d(int *src, int src_len, int repeats, int **dst, int *dst_len) {
 
 double complex* generate_carrier(double carrier_freq, double code_duration, int num_samples) {
     double complex* carrier_signal = malloc(num_samples * sizeof(double complex));
-    double time_step = code_duration / num_samples;
     for (int i = 0; i < num_samples; i++) {
-        double t = i * time_step;
-        carrier_signal[i] =cexp(I * 2 * PI * carrier_freq * t);
+        carrier_signal[i] =cexp(I * 2 * PI * carrier_freq * i);
     }
     return carrier_signal;
 }
@@ -52,7 +50,14 @@ int* generate_nav_data(int num_bits) {
     srand(time(NULL));
     for (int i = 0; i < num_bits; i++) {
         nav_data[i] = rand() % 2 ;
+        /*
+        Enforce non circularity on bit stream
+        */
+        if(i == num_bits-1){
+            nav_data[i] != nav_data[0];
+        }
     }
+    
     return nav_data;
 }
 
@@ -67,15 +72,22 @@ double* compute_power_spectrum(double complex* signal, int num_samples) {
     fftplan p = fft_create_plan(num_samples, fft_signal, fft_signal, LIQUID_FFT_FORWARD, 0);
     fft_execute(p);
     // fft_shift(fft_signal, num_samples);
+    double max_value = 0;
     double* PSD = malloc(num_samples * sizeof(double));
     for (int i = 0; i < num_samples; i++) {
-        PSD[i] = 20*log10f(cabsf(fft_signal[i] / num_samples)) / num_samples;
+        PSD[i] = cabsf(fft_signal[i]) / num_samples;
+        // if (PSD[i] > max_value) {
+        //     max_value = PSD[i];
+        // }
+        // PSD[i] /= max_value;
     }
+
 
     fft_destroy_plan(p);
     free(fft_signal);
     return PSD;
 }
+
 
 int main() {
     int sat_24[1023];
@@ -87,9 +99,8 @@ int main() {
         printf("%d", sat_24[i]);
     }
     
-
     printf("}\n");
-    double carrier_freq = 0.0; // GPS L1 carrier frequency (Hz)
+    double carrier_freq = 2.0e6; // GPS L1 carrier frequency (Hz)
     double code_duration = 1e-3; // 1 ms
     double fs = 8*1.023e6;
     int num_samples = fs * code_duration;
@@ -98,8 +109,8 @@ int main() {
 
 
     float SNRdB = -158.5f; // signal-to-noise ratio [dB]
-    float noise_floor = -130.0f; // Noise floor 
-    float nstd = powf(10.0f, (SNRdB - noise_floor )/20.0f); 
+    float noise_floor = -20.0f; // Noise floor 
+    float nstd = powf(10.0f, (SNRdB - noise_floor)/20.0f); 
     // Generate the carrier signal
     double complex* carrier_signal = generate_carrier(carrier_freq, code_duration, num_samples);
 
@@ -111,7 +122,7 @@ int main() {
     if (upsampled_code_len < num_samples) {
         upsampled_code = realloc(upsampled_code, num_samples * sizeof(int));
         for (int i = upsampled_code_len; i < num_samples; i++) {
-            upsampled_code[i] = upsampled_code[i % upsampled_code_len];
+            upsampled_code[i] != upsampled_code[i % upsampled_code_len];
         }
     }
 
@@ -124,19 +135,23 @@ int main() {
         int nav_index = (i * 50 / num_samples);
         int data_bit = upsampled_code[i]^nav_data[nav_index]; // Modulo-2 addition (XOR)
 
-        bpsk_signal[i] = (2 * data_bit - 1)*carrier_signal[i] + (randnf() + _Complex_I*randnf())*sqrtf(2);
+        bpsk_signal[i] = (2 * data_bit - 1)*carrier_signal[i];// + (randnf() + _Complex_I*randnf())*sqrtf(2);
     }
 
+    // Compute PSD of the noisy signal
     double* PSD = compute_power_spectrum(bpsk_signal, num_samples);
+
+    // double* PSD = compute_power_spectrum(bpsk_signal, num_samples);
 
     FILE *pipe_gp = popen("gnuplot -p", "w");
     FILE *output = fopen("output.txt", "w");
 
     for (int i = 0; i < num_samples; i++) {
         double freq = (i < num_samples/2) ? i * fs / num_samples : (i - num_samples) * fs / num_samples;
+        // double freq = (i-num_samples) * fs / num_samples;
         freq /= 1000000;
-        int nav_index = (i * 50 / num_samples);
-        fprintf(output, "%lf %lf\n",freq, PSD[i]);
+        // int nav_index = (i * 50 / num_samples);
+        fprintf(output, "%lf %lf\n",freq, 20 * log10f(PSD[i]));
     }
  
     fclose(output);
@@ -145,7 +160,8 @@ int main() {
     // Set up gnuplot commands
     fprintf(pipe_gp,"set xlabel 'Frequency [MHz]'\n");
     fprintf(pipe_gp,"set ylabel 'C/A Power Spectrum [dB]'\n");
-    fprintf(pipe_gp, "set ylabel 'Power Spectral Density'\n");
+    // fprintf(pipe_gp,"set yrange [-210:-140]\n");
+    // fprintf(pipe_gp, "set logscale y 10\n");
     fprintf(pipe_gp, "set grid linewidth 1\n");
     fprintf(pipe_gp, "set border linewidth 2\n");
     fprintf(pipe_gp, "set tics font 'Arial,10'\n");
