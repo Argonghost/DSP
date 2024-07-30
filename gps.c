@@ -9,21 +9,7 @@
 #include <time.h>
 #define PI 3.141592654
 
-// The below function, get_code, takes in a given prn code, code length, and repeats the PRN code n times
-
-int* get_code(int* code, int n, int code_len) {
-    int* gc = malloc(n * code_len * sizeof(int));
-
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < code_len; j++) {
-            gc[i*code_len + j] = code[j];
-        }
-    }
-    return gc;
-}
-
-// The below function acts like np.repeat in python
-
+// Function to repeat PRN code
 void repeat_1d(int *src, int src_len, int repeats, int **dst, int *dst_len) {
     *dst_len = src_len * repeats;
     *dst = (int *)malloc((*dst_len) * sizeof(int));
@@ -35,34 +21,30 @@ void repeat_1d(int *src, int src_len, int repeats, int **dst, int *dst_len) {
         }
     }
 }
-// The below generates the complex sinusoid which serves as the carrier signal
 
+// Function to generate carrier signal
 double complex* generate_carrier(double carrier_freq, double code_duration, int num_samples) {
     double complex* carrier_signal = malloc(num_samples * sizeof(double complex));
     for (int i = 0; i < num_samples; i++) {
-        carrier_signal[i] =cexp(I * 2 * PI * carrier_freq * i);
+        carrier_signal[i] = cexp(I * 2 * PI * carrier_freq * i / num_samples);
     }
     return carrier_signal;
 }
 
+// Function to generate navigation data
 int* generate_nav_data(int num_bits) {
     int* nav_data = (int*)malloc(num_bits * sizeof(int));
     srand(time(NULL));
     for (int i = 0; i < num_bits; i++) {
-        nav_data[i] = rand() % 2 ;
-        /*
-        Enforce non circularity on bit stream
-        */
-        if(i == num_bits-1){
-            nav_data[i] != nav_data[0];
+        nav_data[i] = rand() % 2;
+        if (i == num_bits - 1) {
+            nav_data[i] = !nav_data[0];
         }
     }
-    
     return nav_data;
 }
 
-// The below function computes the in-place FFT and Power Spectral Density of our signal (carrier + BPSK)
-
+// Function to compute Power Spectral Density
 double* compute_power_spectrum(double complex* signal, int num_samples) {
     float complex* fft_signal = malloc(num_samples * sizeof(float complex));
     for (int i = 0; i < num_samples; i++) {
@@ -71,49 +53,35 @@ double* compute_power_spectrum(double complex* signal, int num_samples) {
     
     fftplan p = fft_create_plan(num_samples, fft_signal, fft_signal, LIQUID_FFT_FORWARD, 0);
     fft_execute(p);
-    // fft_shift(fft_signal, num_samples);
-    double max_value = 0;
     double* PSD = malloc(num_samples * sizeof(double));
     for (int i = 0; i < num_samples; i++) {
         PSD[i] = cabsf(fft_signal[i]) / num_samples;
-        // if (PSD[i] > max_value) {
-        //     max_value = PSD[i];
-        // }
-        // PSD[i] /= max_value;
     }
-
 
     fft_destroy_plan(p);
     free(fft_signal);
     return PSD;
 }
 
-
 int main() {
     int sat_24[1023];
     PRN(1, sat_24);
-    printf("PRN code for satellite :\n");
-    printf("------------------------------\n");
-    printf("{");
-    for (int i = 0; i < 1023; i++) {
-        printf("%d", sat_24[i]);
-    }
     
-    printf("}\n");
     double carrier_freq = 2.0e6; // GPS L1 carrier frequency (Hz)
-    double code_duration = 1e-3; // 1 ms
-    double fs = 8*1.023e6;
-    int num_samples = fs * code_duration;
+    double code_duration = 10e-3; // 10 ms
+    double fs = 8 * 1.023e6; // Sampling frequency (Hz)
+    int num_samples = fs * code_duration; // Total number of samples
     int chip_rate = 1.023e6;
     int samples_per_chip = fs / chip_rate;
 
-
-    float SNRdB = -158.5f; // signal-to-noise ratio [dB]
+    float SNRdB = -158.5f; // Signal-to-noise ratio [dB]
     float noise_floor = -20.0f; // Noise floor 
-    float nstd = powf(10.0f, (SNRdB - noise_floor)/20.0f); 
+    float nstd = powf(10.0f, (SNRdB - noise_floor) / 20.0f);
+
     // Generate the carrier signal
     double complex* carrier_signal = generate_carrier(carrier_freq, code_duration, num_samples);
 
+    // Upsample PRN code
     int *upsampled_code;
     int upsampled_code_len;
     repeat_1d(sat_24, 1023, samples_per_chip, &upsampled_code, &upsampled_code_len);
@@ -122,8 +90,9 @@ int main() {
     if (upsampled_code_len < num_samples) {
         upsampled_code = realloc(upsampled_code, num_samples * sizeof(int));
         for (int i = upsampled_code_len; i < num_samples; i++) {
-            upsampled_code[i] != upsampled_code[i % upsampled_code_len];
+            upsampled_code[i] = upsampled_code[i % upsampled_code_len];
         }
+        upsampled_code_len = num_samples;
     }
 
     // Generate fake nav data
@@ -133,49 +102,40 @@ int main() {
     double complex* bpsk_signal = malloc(num_samples * sizeof(double complex));
     for (int i = 0; i < num_samples; i++) {
         int nav_index = (i * 50 / num_samples);
-        int data_bit = upsampled_code[i]^nav_data[nav_index]; // Modulo-2 addition (XOR)
-
-        bpsk_signal[i] = (2 * data_bit - 1)*carrier_signal[i];// + (randnf() + _Complex_I*randnf())*sqrtf(2);
+        int data_bit = upsampled_code[i] ^ nav_data[nav_index]; // Modulo-2 addition (XOR)
+        bpsk_signal[i] = (2 * data_bit - 1) * carrier_signal[i] + (randnf() + _Complex_I * randnf()) * 0.01;
     }
 
     // Compute PSD of the noisy signal
     double* PSD = compute_power_spectrum(bpsk_signal, num_samples);
+    printf("Noise level is given by: %f\n", log10f(nstd));
 
-    // double* PSD = compute_power_spectrum(bpsk_signal, num_samples);
-
-    FILE *pipe_gp = popen("gnuplot -p", "w");
+    // Write PRN code and baseband signal to output.txt
     FILE *output = fopen("output.txt", "w");
-
     for (int i = 0; i < num_samples; i++) {
-        double freq = (i < num_samples/2) ? i * fs / num_samples : (i - num_samples) * fs / num_samples;
-        // double freq = (i-num_samples) * fs / num_samples;
-        freq /= 1000000;
-        // int nav_index = (i * 50 / num_samples);
-        fprintf(output, "%lf %lf\n",freq, 20 * log10f(PSD[i]));
+        fprintf(output, "%d %f\n", i, crealf(bpsk_signal[i]));
     }
- 
     fclose(output);
-    
 
     // Set up gnuplot commands
+    FILE *pipe_gp = popen("gnuplot -p", "w");
+        // Set up gnuplot commands
     fprintf(pipe_gp,"set xlabel 'Frequency [MHz]'\n");
     fprintf(pipe_gp,"set ylabel 'C/A Power Spectrum [dB]'\n");
-    // fprintf(pipe_gp,"set yrange [-210:-140]\n");
-    // fprintf(pipe_gp, "set logscale y 10\n");
     fprintf(pipe_gp, "set grid linewidth 1\n");
     fprintf(pipe_gp, "set border linewidth 2\n");
     fprintf(pipe_gp, "set tics font 'Arial,10'\n");
     fprintf(pipe_gp, "set key font 'Arial,10'\n");
     fprintf(pipe_gp,"plot 'output.txt' using 1:2 with lines lc rgb 'blue' title 'Baseband Signal'\n");
-
-    // Close the gnuplot pipe
     fflush(pipe_gp);
     pclose(pipe_gp);
 
+    // Free allocated memory
     free(carrier_signal);
     free(bpsk_signal);
     free(PSD);
     free(nav_data);
     free(upsampled_code);
+    
     return 0;
 }
