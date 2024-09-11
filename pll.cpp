@@ -8,11 +8,6 @@ using namespace std::complex_literals;
 
 /*This is a simple second order Phase locked loop implementation*/
 class SimulatePLL{
-    friend ostream &operator<<(ostream &os, const SimulatePLL &p){
-        os << p.a2 << endl;
-        return os;
-    };
-
     private:
     float        phase_offset;  //     carrier phase offset
     float        frequency_offset;  // carrier frequency offset
