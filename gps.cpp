@@ -103,7 +103,7 @@ class Base_Signal{
 
   public:
   Base_Signal(){
-    carrier_frequency =             2.0e6;
+    carrier_frequency =             2.046e6;
     code_duration =                 10e-3;
     sampling_frequency =            20e6;
     num_samples =                   sampling_frequency * code_duration;
@@ -140,10 +140,10 @@ class BPSK: public Base_Signal{
     return vec;
   };
 
-  void PRINT_RE(vector<double> CA);
-  void PRINT_IM(vector<complex<double>> CA);
+  void print_real(vector<double> CA);
+  void print_complex(vector<complex<double>> CA);
 
-  vector<int16_t> REPEAT(vector<int16_t>& data, std::size_t count);
+  vector<int16_t> repeat_signal(vector<int16_t>& data, std::size_t count);
   vector<int16_t> create_nav();
   vector<double> gps_L1_modulate(Base_Signal& signal);
 };
@@ -171,7 +171,7 @@ vector<int16_t> BPSK::create_nav() {
 //     return data;
 // };
 
-vector<int16_t> BPSK::REPEAT(vector<int16_t>& data, std::size_t count) {
+vector<int16_t> BPSK::repeat_signal(vector<int16_t>& data, std::size_t count) {
     vector<int16_t> repeated_data; // New vector to store repeated elements
     repeated_data.reserve(data.size() * count); // Reserve space for efficiency
 
@@ -185,7 +185,7 @@ vector<int16_t> BPSK::REPEAT(vector<int16_t>& data, std::size_t count) {
     return repeated_data;
 }
 
-void BPSK::PRINT_RE(vector<double> CA){
+void BPSK::print_real(vector<double> CA){
     cout << "[";
     for(size_t i = 0; i < CA.size(); i++){
         cout << i << " " << CA[i]<< endl;
@@ -193,7 +193,7 @@ void BPSK::PRINT_RE(vector<double> CA){
     cout << "]";
 };
 
-void BPSK::PRINT_IM(vector<complex<double>> CA){
+void BPSK::print_complex(vector<complex<double>> CA){
     cout << "[";
     for(size_t i = 0; i < CA.size(); i++){
         cout << i << " " << real(CA[i])<< endl;
@@ -204,7 +204,7 @@ void BPSK::PRINT_IM(vector<complex<double>> CA){
 vector<double> BPSK::gps_L1_modulate(Base_Signal& signal){
   vector<complex<double>> complex_signal = signal.create_carrier();
   vector<int16_t> mod0 =                     GEN_CA_CODE(sv);
-  vector<int16_t> mod1 = REPEAT(mod0, 8); // Creating CA code
+  vector<int16_t> mod1 = repeat_signal(mod0, 8); // Creating CA code
   int code_size =                          mod1.size(); 
 
   vector<int16_t> mod2 =                     create_nav(); // Creating 50 bit Nav data
@@ -234,10 +234,9 @@ int main(){
     Base_Signal base_signal;
     BPSK modulate(sv);
 
-    modulate.gps_L1_modulate(base_signal);
     vector<int16_t> nav = modulate.create_nav();
     vector<int16_t> ca_code = modulate.create_code();
-    vector<int16_t> new_code = modulate.REPEAT(ca_code, 8);
+    vector<int16_t> new_code = modulate.repeat_signal(ca_code, 8);
 
     vector<double> L1_signal = modulate.gps_L1_modulate(base_signal);
     ofstream outfile;
@@ -245,15 +244,16 @@ int main(){
     for(size_t i = 0; i < L1_signal.size(); i++){
         int nav_index = (i * 50 / L1_signal.size()); 
         int CA_index = i * 1023 / L1_signal.size();
-        outfile << i << std::setw(10) << CA_index <<std::setw(10) << (2*nav[nav_index] - 1)<< std::setw(10) << new_code[i] <<std::setw(10) <<  real(L1_signal[i])<< endl;
+        outfile << i << std::setw(10) << CA_index <<std::setw(10) << (2*nav[nav_index] - 1)<< std::setw(10) << 2*new_code[i]-1 <<std::setw(10) <<  real(L1_signal[i])<< endl;
     };
 
     outfile.close();
     cout << "Tested successfully" << endl;    
     cout << "Done" << endl;
-    cout << "Size of code is : " << new_code.size() << endl;
-    for(auto i: new_code){
-      cout << i << " ";
+    if(new_code.size() != 8 * ca_code.size()){
+      cerr << "CA code size is not 8184" << endl;
+    }else{
+      cout << "Size of code is : " << new_code.size() << endl;
     };
       
     return 0;
