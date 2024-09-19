@@ -7,6 +7,8 @@
 #include <cmath>
 #include <fstream>
 #include <cstdlib> // C - library to invoke rand()
+#include "fftw_cpp.hh"
+#include <tuple>
 #define PI 3.141592654
 using namespace std;
 using namespace std::complex_literals;
@@ -145,7 +147,7 @@ class BPSK: public Base_Signal{
 
   vector<int16_t> repeat_signal(vector<int16_t>& data, std::size_t count);
   vector<int16_t> create_nav();
-  vector<double> gps_L1_modulate(Base_Signal& signal);
+  vector<complex<double>> gps_L1_modulate(Base_Signal& signal);
 };
 vector<int16_t> BPSK::create_nav() {
     int num_bits = 50; // Number of bits
@@ -157,19 +159,6 @@ vector<int16_t> BPSK::create_nav() {
     return nav_data;
 
 }
-// vector<int16_t> BPSK::REPEAT(vector<int16_t>& data, std::size_t count) {
-//     auto pattern_size = data.size();
-//     data.resize(pattern_size * count);
-//     const auto pbeg = data.begin();
-//     const auto pend = std::next(pbeg, pattern_size);
-//     auto it = std::next(data.begin(), pattern_size);
-//     for(std::size_t k = 1; k < count; ++k) {
-//         std::copy(pbeg, pend, it);
-//         std::advance(it, pattern_size);
-//     };
-
-//     return data;
-// };
 
 vector<int16_t> BPSK::repeat_signal(vector<int16_t>& data, std::size_t count) {
     vector<int16_t> repeated_data; // New vector to store repeated elements
@@ -201,27 +190,66 @@ void BPSK::print_complex(vector<complex<double>> CA){
     cout << "]" << endl;
 };
 
-vector<double> BPSK::gps_L1_modulate(Base_Signal& signal){
-  vector<complex<double>> complex_signal = signal.create_carrier();
-  vector<int16_t> mod0 =                     GEN_CA_CODE(sv);
-  vector<int16_t> mod1 = repeat_signal(mod0, 8); // Creating CA code
-  int code_size =                          mod1.size(); 
+vector<complex<double>> BPSK::gps_L1_modulate(Base_Signal& signal) {
+    vector<complex<double>> complex_signal = signal.create_carrier();
+    vector<int16_t> mod0 = GEN_CA_CODE(sv);
+    vector<int16_t> mod1 = repeat_signal(mod0, 8); // Creating CA code
+    int code_size = mod1.size();
 
-  vector<int16_t> mod2 =                     create_nav(); // Creating 50 bit Nav data
- 
-  /* Now lets XOR both modulation*/
+    vector<int16_t> mod2 = create_nav(); // Creating 50-bit Nav data
 
-  vector<double> modulated_signal(code_size);
-  for(size_t i = 0; i < code_size; i++){
-    int nav_index = (i * 50 / code_size);
-    int mod_bits = mod1[i] ^ mod2[nav_index];
-      // mod[i] = real(signal[i]) * static_cast<double>(code[i]);
-    modulated_signal[i] = real(complex_signal[i]) * (2 * mod_bits - 1);
+    // Now let's XOR both modulation
+    vector<complex<double>> modulated_signal(code_size);
+
+    for (size_t i = 0; i < code_size; i++) {
+        int nav_index = (i * 50 / code_size);
+        int mod_bits = mod1[i] ^ mod2[nav_index];
+
+        // Multiply the full complex carrier by the modulated bits (2 * mod_bits - 1)
+        modulated_signal[i] = complex_signal[i] * static_cast<double>(2 * mod_bits - 1);
+    }
+
+    return modulated_signal;
+}
+
+
+class FFT_Compute: public BPSK{
+  private:
+  size_t N;
+  public:
+  FFT_Compute(){};
+  FFT_Compute(size_t bin_size): N{bin_size}{};
+  vector<complex<double>> compute_fft(BPSK &si, size_t bin_size);
+  vector<double> power_compute(BPSK &si, size_t bin_size);
   };
 
-  return modulated_signal;
-
+vector<complex<double>> FFT_Compute::compute_fft(BPSK &si, size_t bin_size){
+  dcvector L1_signal = si.gps_L1_modulate(si);
+  dcvector L1_signal_fft(bin_size);
+  FFT fft(bin_size, bin_size);
+  fft.fft(L1_signal, L1_signal_fft);
+  dvector t(N);
+  dvector f(N);
+  fft.freq(f);
+  fft.shift_freq(f, L1_signal_fft);
+  return L1_signal_fft;
 };
+
+vector<double> FFT_Compute::power_compute(BPSK &si, size_t bin_size) {
+    // Get the FFT of the signal
+    vector<complex<double>> fft_signal= compute_fft(si, bin_size);
+    
+    // Vector to store power spectral density
+    vector<double> power_spectral_density(fft_signal.size());
+
+    // Calculate the magnitude squared (power) for each FFT bin
+    for (size_t i = 0; i < fft_signal.size(); ++i) {
+        power_spectral_density[i] = 20 * log10(abs(fft_signal[i])); // Magnitude squared, normalized by N
+    }
+
+    return power_spectral_density;
+};
+
 
 
 int main(){
@@ -238,12 +266,12 @@ int main(){
     vector<int16_t> ca_code = modulate.create_code();
     vector<int16_t> new_code = modulate.repeat_signal(ca_code, 8);
 
-    vector<double> L1_signal = modulate.gps_L1_modulate(base_signal);
+    vector<complex<double>> L1_signal = modulate.gps_L1_modulate(base_signal);
     ofstream outfile;
     outfile.open("gps_data_output.txt");
     for(size_t i = 0; i < L1_signal.size(); i++){
         int nav_index = (i * 50 / L1_signal.size()); 
-        int CA_index = i * 1023 / L1_signal.size();
+        int CA_index = i *8;
         outfile << i << std::setw(10) << CA_index <<std::setw(10) << (2*nav[nav_index] - 1)<< std::setw(10) << 2*new_code[i]-1 <<std::setw(10) <<  real(L1_signal[i])<< endl;
     };
 
@@ -255,6 +283,24 @@ int main(){
     }else{
       cout << "Size of code is : " << new_code.size() << endl;
     };
+
+    cout << "Calculating FFT" << endl;
+    size_t N = L1_signal.size();
+    FFT_Compute fft_(N);
+    dcvector L1_signal_fft = fft_.compute_fft(modulate, N);
+
+// Compute Power Spectral Density (PSD) from the base signal
+    dvector L1_signal_PSD = fft_.power_compute(modulate, N); 
+
+    cout << "Done calculating FFT" << endl;
+    cout << "Printing results" << endl;
+    ofstream fft_file;
+    fft_file.open("fft_output.txt");
+    dvector f;
+    for(size_t i = 0; i < L1_signal.size(); i++){
+        fft_file <<  L1_signal_PSD[i]<< endl;
+    };
+    fft_file.close();
       
     return 0;
 };
