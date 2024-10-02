@@ -8,7 +8,8 @@
 #include <fstream>
 #include <cstdlib> // C - library to invoke rand()
 #include "fftw_cpp.hh"
-#include <tuple>
+#include <Eigen/Dense>
+#include <random>
 #define PI 3.141592654
 using namespace std;
 using namespace std::complex_literals;
@@ -148,6 +149,7 @@ class BPSK: public Base_Signal{
   vector<int16_t> repeat_signal(vector<int16_t>& data, std::size_t count);
   vector<int16_t> create_nav();
   vector<complex<double>> gps_L1_modulate(Base_Signal& signal);
+  void add_noise(vector<complex<double>>& modulated_signal);
 };
 vector<int16_t> BPSK::create_nav() {
     int num_bits = 50; // Number of bits
@@ -201,17 +203,37 @@ vector<complex<double>> BPSK::gps_L1_modulate(Base_Signal& signal) {
     // Now let's XOR both modulation
     vector<complex<double>> modulated_signal(code_size);
 
+    // Now lets add some noise statistics
+    double SNRdB = -158.5f; // signal-to-noise ratio [dB]
+    // Convert the desired signal power from dB to a linear scale
+    double nstd = sqrtf(powf(10.0f, SNRdB / 10.0f));
+
     for (size_t i = 0; i < code_size; i++) {
         int nav_index = (i * 50 / code_size);
         int mod_bits = mod1[i] ^ mod2[nav_index];
 
         // Multiply the full complex carrier by the modulated bits (2 * mod_bits - 1)
-        modulated_signal[i] = complex_signal[i] * static_cast<double>(2 * mod_bits - 1);
-    }
+        modulated_signal[i] = nstd * complex_signal[i] * static_cast<double>(2 * mod_bits - 1);       
+    };
+    // add_noise(modulated_signal);
 
     return modulated_signal;
-}
+};
 
+void BPSK::add_noise(vector<complex<double>>& modulated_signal) {
+    static std::mt19937 gen{std::random_device{}()};
+    double noise_floor = -20.0f; // Noise floor 
+    // Convert the desired signal power from dB to a linear scale
+    double nstd = sqrtf(powf(10.0f, noise_floor / 10.0f));
+    std::normal_distribution<double> d{0.0, nstd}; 
+
+    for (size_t i = 0; i < modulated_signal.size(); i++) {
+        double real_noise = d(gen); // Real part of noise
+        double imag_noise = d(gen); // Imaginary part of noise
+        modulated_signal[i] += std::complex<double>(real_noise, imag_noise); // Adding noise
+    }
+    std::cout << "Noise added to the modulated signal.\n";
+};
 
 class FFT_Compute: public BPSK{
   private:
@@ -219,11 +241,11 @@ class FFT_Compute: public BPSK{
   public:
   FFT_Compute(){};
   FFT_Compute(size_t bin_size): N{bin_size}{};
-  vector<complex<double>> compute_fft(BPSK &si, size_t bin_size);
-  vector<double> power_compute(BPSK &si, size_t bin_size);
+  vector<complex<double>> compute_fft(BPSK si, size_t bin_size);
+  vector<double> power_compute(BPSK si, size_t bin_size);
   };
 
-vector<complex<double>> FFT_Compute::compute_fft(BPSK &si, size_t bin_size){
+vector<complex<double>> FFT_Compute::compute_fft(BPSK si, size_t bin_size){
   dcvector L1_signal = si.gps_L1_modulate(si);
   dcvector L1_signal_fft(bin_size);
   FFT fft(bin_size, bin_size);
@@ -235,7 +257,7 @@ vector<complex<double>> FFT_Compute::compute_fft(BPSK &si, size_t bin_size){
   return L1_signal_fft;
 };
 
-vector<double> FFT_Compute::power_compute(BPSK &si, size_t bin_size) {
+vector<double> FFT_Compute::power_compute(BPSK si, size_t bin_size) {
     // Get the FFT of the signal
     vector<complex<double>> fft_signal= compute_fft(si, bin_size);
     
@@ -284,12 +306,10 @@ int main(){
       cout << "Size of code is : " << new_code.size() << endl;
     };
 
-    cout << "Calculating FFT" << endl;
+    cout << "Calculating FFT with noise added .. " << endl;
     size_t N = L1_signal.size();
     FFT_Compute fft_(N);
-    dcvector L1_signal_fft = fft_.compute_fft(modulate, N);
-
-// Compute Power Spectral Density (PSD) from the base signal
+    // Compute Power Spectral Density (PSD) from the base signal
     dvector L1_signal_PSD = fft_.power_compute(modulate, N); 
 
     cout << "Done calculating FFT" << endl;
@@ -301,6 +321,5 @@ int main(){
         fft_file <<  L1_signal_PSD[i]<< endl;
     };
     fft_file.close();
-      
     return 0;
 };
